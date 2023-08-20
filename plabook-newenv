@@ -1,0 +1,110 @@
+---
+
+- name: "deploy new VM from Template"
+  hosts: localhost
+  gather_facts: no
+  vars:
+    vcenter_hostname: 'vcenter URL'
+    vcenter_template_name: 'template name'
+    vcenter_datacenter: 'datacenter'
+    vcenter_cluster: 'cluster name'
+    vcenter_folder: '/'
+    vm_vlan: 'vlan'
+    vm_dns:  'dns'
+    domain_username: 'username to enter the vcenter'
+    domain_password: 'username password'
+    localpassword: 'default password to first enter the machine at startup'
+    domain_name: 'vcenter domain name'
+    dc_name: 'dc_name'
+    vm_name: 'vmname'
+    dcfqdn: 'new domain name'
+    dc_ip: 'dc ip'
+    server_ip: 'server ip'
+    netmask: 'netmask'
+    gateway: 'gateway'
+
+
+  tasks:
+  - name: Clone a virtual machine from Windows template and customize
+    vmware_guest:
+      hostname: "{{vcenter_hostname}}"
+      username: "{{vcenter_username}}@{{domain_name}}"
+      password: "{{domain_password}}"
+      validate_cert: no
+      datacenter: '{{vcenter_datacenter}}'
+      cluster: '{{vcenter_cluster}}'
+      datastore: '{{vcenter_datacenter}}'
+      annotation: 'Ansible Made'
+      state: poweredon
+      name: '{{dc_name}}.{{dcfqdn}}'
+      template: '{{vcenter_template_name}}'
+      hardware:
+          num_cpus: '4'
+          memory_mb: '8192'
+      networks:
+      - name: '{{vm_vlan}}'
+        ip: '{{dc_ip}}'
+        netmask: '{{netmask}}'
+        gateway: '{{gateway}}'
+        start_connected: true
+
+      customization:
+        dns_servers:
+          -'{{dns_servers}}'
+        timezone: '{{timezone}}'
+        autologon: true
+        autologoncount: 3
+        password: '{{localpassword}}'
+        runonce:
+        - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP #run powershell script to get the ansible machine access to the windows server 
+        wait_for_ip_address: yes
+        wait_for_costomization: yes
+  delegate_to: localhost
+  register: reg_new_vm
+
+
+- name: "create new domain in a new forest for target host"
+  win_domain:
+    dns_domain_name: '{{dcfqdn}}'
+    safe_mode_password: '{{localpassword}}'
+    register: domain_install
+    delegate_to: '{{dc_ip}}'  #create a new server and join the new domain
+    
+- name: Clone a virtual machine from Windows template and customize
+  vmware_guest:
+    hostname: "{{vcenter_hostname}}"
+    username: "{{vcenter_username}}@{{domain_name}}"
+    password: "{{domain_password}}"
+    validate_cert: no
+    datacenter: '{{vcenter_datacenter}}'
+    cluster: '{{vcenter_cluster}}'
+    datastore: '{{vcenter_datacenter}}'
+    annotation: 'Ansible Made'
+    state: poweredon
+    name: '{{vm_name}}.{{dcfqdn}}'
+    template: '{{vcenter_template_name}}'
+    hardware:
+        num_cpus: '4'
+        memory_mb: '8192'
+    networks:
+    - name: '{{vm_vlan}}'
+      ip: '{{vm_ip}}'
+      netmask: '{{netmask}}'
+      gateway: '{{gateway}}'
+      start_connected: true
+
+    customization:
+      dns_servers:
+        -'{{dns_servers}}'
+      dns_suffix:
+        - '{{dcfqdn}}'
+      timezone: '{{timezone}}'
+      autologon: true
+      autologoncount: 3
+      password: '{{localpassword}}'
+      runonce:
+      - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP #run powershell script to get the ansible machine access to the windows server 
+      wait_for_ip_address: yes
+      wait_for_costomization: yes
+  delegate_to: localhost
+  register: reg_new_vm
