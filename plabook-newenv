@@ -60,14 +60,19 @@
       wait_for_ip_address: yes
   delegate_to: localhost
   register: reg_dc_vm
-
-
+  
 - name: "create new domain in a new forest for target host"
   win_domain:
     dns_domain_name: '{{dcfqdn}}'
     safe_mode_password: '{{localpassword}}'
   register: domain_install
   delegate_to: '{{dc_ip}}'  #create a new server and join the new domain
+
+- name: Reboot Domain Controller (required after promotion)
+  win_reboot:
+    reboot_timeout: 600
+  delegate_to: "{{ dc_ip }}"
+
     
 - name: Clone a virtual machine from Windows template and customize
   vmware_guest:
@@ -105,3 +110,33 @@
     wait_for_ip_address: yes
   delegate_to: localhost
   register: reg_new_vm
+
+- name: Wait for WinRM on member server
+  wait_for:
+    host: "{{ vm_ip }}"
+    port: 5985
+    state: started
+    delay: 30
+    timeout: 600
+  delegate_to: localhost
+
+
+- name: Join the new VM to the domain
+  win_domain_membership:
+    dns_domain_name: "{{ dcfqdn }}"
+    domain_admin_user: "Administrator@{{ dcfqdn }}"
+    domain_admin_password: "{{ localpassword }}"
+    hostname: "{{ vm_name }}"
+    state: domain
+  delegate_to: "{{ vm_ip }}"
+  become: yes
+  become_method: runas
+  become_user: Administrator
+  register: domain_join
+
+- name: Reboot VM after domain join
+  win_reboot:
+    reboot_timeout: 600
+  delegate_to: "{{ vm_ip }}"
+  when: domain_join.changed
+
